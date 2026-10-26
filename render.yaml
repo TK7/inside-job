@@ -1,9 +1,10 @@
-# One-click permanent hosting on Render (free plan). See README "Permanent hosting".
+# One-click permanent hosting on Render. See README "Option B".
+# Starter is the smallest paid instance: it never spins down, unlike the free instance.
 services:
   - type: web
     name: inside-job
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: npm install --omit=dev
     startCommand: npm start
     healthCheckPath: /health

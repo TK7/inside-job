@@ -33,13 +33,21 @@ using the OpenSSH client built into Windows. It prints a link like `https://abc1
 Send that link to your friends. Keep the window open while you play. The free link changes
 whenever the tunnel reconnects, and the game is only up while your PC is running it.
 
-### Option B: permanent link (free Render account)
+### Option B: permanent link (Render)
+
+Live at **https://inside-job.onrender.com**, deployed from `main` of this repository.
 
 1. Push this folder to a GitHub repository.
 2. In [Render](https://render.com), choose **New → Blueprint** and pick the repo. `render.yaml`
    sets everything up.
-3. You get a permanent URL like `https://inside-job.onrender.com`. On the free plan, the first
-   visit after the app has been idle takes about a minute to wake it up.
+3. You get a permanent URL like `https://inside-job.onrender.com`. Every push to `main` redeploys.
+
+`render.yaml` uses Render's **Starter** instance (about $6/month), which stays awake. To run it
+for free instead, set `plan: free`; a free instance sleeps after 15 idle minutes and takes about a
+minute to wake on the next visit.
+
+Rooms live in server memory, so a deploy or restart ends any games in progress. Avoid pushing
+during a game night.
 
 Any Node host that supports WebSockets works (Railway, Fly.io, a VPS). Run `npm start` and set
 `PORT` if needed.
