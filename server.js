@@ -154,7 +154,7 @@ io.on('connection', (socket) => {
   on('start', (r, pid) => r.start(pid));
   on('act', (r, pid, m) => r.act(pid, m));
   on('chat', (r, pid, m) => r.say(pid, m.text, m.channel));
-  on('again', (r, pid) => r.playAgain(pid));
+  on('again', (r, pid, m) => r.playAgain(pid, !!m.restart));
   on('leave', (r, pid) => {
     socket.leave(r.code);
     socket.data = {};

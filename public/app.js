@@ -36,6 +36,8 @@
   function showHome(message) {
     S = null;
     lastStage = '';
+    $('#finale').hidden = true;
+    stopConfetti();
     $('#room').hidden = true;
     $('#home').hidden = false;
     $('#home-error').textContent = message || '';
@@ -135,6 +137,7 @@
     renderPlayers();
     renderChat();
     renderStage();
+    renderFinale();
     tick();
   }
 
@@ -564,14 +567,7 @@
     const g = G();
     const c = cur();
     const iWon = g.winners.includes(S.me.id);
-    const titles = {
-      crew: ['The crew got away clean!', 'The vault is cracked and the loot is split.'],
-      mole: ['The Mole wins!', g.locks >= 3 ? 'The crew opened the vault, but the Mole slipped away with the loot.' : 'The Vault raised enough alarms. The heist is blown.'],
-      vault: ['The Vault wins', 'Too many alarms. Better luck next job.'],
-      A: [`${S.teamNames.A} wins!`, `${g.teamScore.A} to ${g.teamScore.B}`],
-      B: [`${S.teamNames.B} wins!`, `${g.teamScore.B} to ${g.teamScore.A}`],
-      tie: ["It's a tie!", `${g.teamScore.A} all`],
-    }[g.winner];
+    const titles = outcomeTitles(g);
     const good = g.winner === 'tie' || iWon;
 
     let reveal = '';
@@ -604,8 +600,148 @@
       <div class="small" style="margin-top:6px">${g.winner === 'tie' ? 'Nobody loses tonight.' : iWon ? 'You won!' : 'You lost this one.'}</div></div></div>
       <div class="card">${reveal}<p class="eyebrow">${g.mode === 'crew' ? 'Personal cut (only the winners get paid)' : 'Player points (MVP)'}</p>
       <table class="scores">${rows}</table></div>
-      <div class="card row">${isHost() ? '<button class="btn gold big" data-again>Play again</button>' : `<span class="muted">Waiting for ${nm(S.hostId)} to start another game…</span>`}
-      <button class="btn" data-leave>Leave room</button></div>`;
+      <div class="card row">${againButtons()}<button class="btn" data-leave>Leave room</button></div>`;
+  }
+
+  // Only the branch for the actual outcome is built: crew games have no team scores.
+  function outcomeTitles(g) {
+    switch (g.winner) {
+      case 'crew': return ['The crew got away clean!', 'The vault is cracked and the loot is split.'];
+      case 'mole': return ['The Mole wins!', g.locks >= 3 ? 'The crew opened the vault, but the Mole slipped away with the loot.' : 'The Vault raised enough alarms. The heist is blown.'];
+      case 'vault': return ['The Vault wins', 'Too many alarms. The crew is going to prison.'];
+      case 'A': return [`${S.teamNames.A} wins!`, `${g.teamScore.A} to ${g.teamScore.B}`];
+      case 'B': return [`${S.teamNames.B} wins!`, `${g.teamScore.B} to ${g.teamScore.A}`];
+      default: return ["It's a tie!", `${g.teamScore.A} all`];
+    }
+  }
+
+  function againButtons() {
+    return isHost()
+      ? `<button class="btn gold big" data-again="restart">Play again</button>
+         <button class="btn" data-again="lobby" title="Change mode, question pack or teams first">Back to lobby</button>`
+      : `<span class="muted">Waiting for ${nm(S.hostId)} to start the next heist…</span>`;
+  }
+
+  // ------------------------------------------------------------ finale popup
+  // Shown once per game when it ends: robber with the cash (and confetti) for the winners,
+  // robber behind bars for the losers.
+  let finaleShown = null;
+  function renderFinale() {
+    const el = $('#finale');
+    const g = G();
+    if (S.phase !== 'gameover' || !g) {
+      el.hidden = true;
+      stopConfetti();
+      return;
+    }
+    const id = `${S.code}#${g.no}`;
+    if (finaleShown === id) {
+      // Keep the host's buttons in sync (e.g. host changed) while it stays open.
+      const slot = el.querySelector('.finale-actions');
+      if (slot && !el.hidden) slot.innerHTML = againButtons();
+      return;
+    }
+    finaleShown = id;
+    const [title, line] = outcomeTitles(g);
+    const won = g.winner === 'tie' || g.winners.includes(S.me.id);
+    const you = g.winner === 'tie' ? 'Nobody loses tonight.' : won ? 'You won!' : 'You lost this one.';
+    el.innerHTML = `<div class="finale-card ${won ? 'won' : 'lost'}" role="dialog" aria-modal="true" aria-labelledby="finale-title">
+        <div class="finale-art">${won ? robberArt(true) : robberArt(false)}</div>
+        <h2 id="finale-title">${esc(title)}</h2>
+        <p>${esc(line)}</p>
+        <p class="finale-you">${you}</p>
+        <div class="finale-actions">${againButtons()}</div>
+        <button class="btn finale-close" data-close>See the scores</button>
+      </div>`;
+    el.hidden = false;
+    if (won) startConfetti();
+  }
+  $('#finale').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && 'again' in b.dataset) return send('again', { restart: b.dataset.again === 'restart' });
+    if ((b && 'close' in b.dataset) || e.target.id === 'finale') {
+      $('#finale').hidden = true;
+      stopConfetti();
+    }
+  });
+
+  function robberArt(rich) {
+    const ink = '#1b1e25';
+    const stripes = Array.from({ length: 5 }, (_, i) => `<rect x="84" y="${128 + i * 14}" width="72" height="7" fill="${ink}"/>`).join('');
+    const body = `
+      <rect x="84" y="122" width="72" height="72" rx="14" fill="#eef0f4"/>${stripes}
+      <circle cx="120" cy="90" r="30" fill="#f2c39b"/>
+      <path d="M89 86 Q89 54 120 54 Q151 54 151 86 Z" fill="${ink}"/>
+      <rect x="87" y="80" width="66" height="8" rx="4" fill="#2c313c"/>
+      <circle cx="120" cy="52" r="7" fill="#2c313c"/>
+      <rect x="92" y="88" width="56" height="15" rx="7.5" fill="${ink}"/>
+      <ellipse cx="108" cy="95.5" rx="6" ry="4.2" fill="#fff"/><ellipse cx="132" cy="95.5" rx="6" ry="4.2" fill="#fff"/>
+      <circle cx="${rich ? 110 : 107}" cy="${rich ? 95 : 97}" r="2.3" fill="${ink}"/><circle cx="${rich ? 134 : 131}" cy="${rich ? 95 : 97}" r="2.3" fill="${ink}"/>`;
+    if (rich) {
+      const bill = (x, y, r) => `<g transform="translate(${x} ${y}) rotate(${r})"><rect x="-15" y="-8" width="30" height="16" rx="2" fill="#4fbf72" stroke="#2b7a47" stroke-width="1.5"/><circle r="5" fill="#8fe0a9"/><text y="3.5" text-anchor="middle" font-size="9" font-weight="700" fill="#2b7a47">$</text></g>`;
+      return `<svg viewBox="0 0 240 200" aria-label="A grinning masked robber hoisting a sack of cash">
+        ${bill(34, 40, -20)}${bill(206, 34, 18)}${bill(30, 120, 12)}${bill(212, 132, -14)}${bill(64, 16, 8)}
+        <path d="M154 134 L186 96" stroke="#f2c39b" stroke-width="11" stroke-linecap="round"/>
+        <path d="M86 134 L56 108" stroke="#f2c39b" stroke-width="11" stroke-linecap="round"/>
+        <path d="M168 62 Q160 90 170 104 Q194 116 214 100 Q222 84 206 62 Z" fill="#c9a35a" stroke="#8f6f2e" stroke-width="2.5"/>
+        <path d="M172 62 Q187 52 204 62" stroke="#8f6f2e" stroke-width="5" fill="none" stroke-linecap="round"/>
+        <text x="191" y="94" text-anchor="middle" font-size="26" font-weight="800" fill="#6e5220">$</text>
+        <g transform="translate(46 100) rotate(-25)"><rect x="-16" y="-9" width="32" height="18" rx="2" fill="#4fbf72" stroke="#2b7a47" stroke-width="1.5"/><rect x="-12" y="-13" width="32" height="18" rx="2" fill="#5fd383" stroke="#2b7a47" stroke-width="1.5"/></g>
+        ${body}
+        <path d="M108 108 Q120 120 132 108" stroke="${ink}" stroke-width="3" fill="none" stroke-linecap="round"/>
+      </svg>`;
+    }
+    // A wider gap in the middle keeps the robber's face visible between the bars.
+    const bars = [40, 64, 88, 145, 169, 193].map((x) => `<rect x="${x}" y="22" width="7" height="176" rx="3" fill="url(#steel)"/>`).join('');
+    return `<svg viewBox="0 0 240 200" aria-label="A glum masked robber in a striped suit behind prison bars">
+      <defs><linearGradient id="steel" x1="0" x2="1"><stop offset="0" stop-color="#7d8696"/><stop offset=".5" stop-color="#d7dce4"/><stop offset="1" stop-color="#6c7484"/></linearGradient></defs>
+      <rect x="30" y="16" width="180" height="184" rx="6" fill="#262b35"/>
+      <rect x="36" y="22" width="168" height="178" fill="#1f232c"/>
+      ${body}
+      <path d="M108 113 Q120 104 132 113" stroke="${ink}" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M152 70 q-4 8 0 11 q4 -3 0 -11" fill="#7cc4ff"/>
+      ${bars}
+      <rect x="30" y="16" width="180" height="10" rx="3" fill="url(#steel)"/>
+      <rect x="30" y="160" width="180" height="8" rx="3" fill="url(#steel)"/>
+      <circle cx="91.5" cy="140" r="8.5" fill="#f2c39b"/><circle cx="148.5" cy="140" r="8.5" fill="#f2c39b"/>
+      <rect x="88" y="136" width="7" height="3" fill="url(#steel)"/><rect x="145" y="136" width="7" height="3" fill="url(#steel)"/>
+    </svg>`;
+  }
+
+  let confettiRaf = null;
+  function startConfetti() {
+    const canvas = $('#confetti');
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const W = (canvas.width = innerWidth * dpr);
+    const H = (canvas.height = innerHeight * dpr);
+    const colors = ['#d9ad55', '#f1cd7d', '#3ecf8e', '#5b8cff', '#ef5a5f', '#ffffff'];
+    const bits = Array.from({ length: 180 }, () => ({
+      x: Math.random() * W, y: -Math.random() * H * 0.6, w: (6 + Math.random() * 6) * dpr, h: (8 + Math.random() * 8) * dpr,
+      vx: (Math.random() - 0.5) * 2.4 * dpr, vy: (2 + Math.random() * 3) * dpr, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.25,
+      c: colors[Math.floor(Math.random() * colors.length)],
+    }));
+    const until = Date.now() + 5000;
+    stopConfetti();
+    canvas.hidden = false;
+    const frame = () => {
+      ctx.clearRect(0, 0, W, H);
+      let alive = false;
+      for (const b of bits) {
+        b.x += b.vx; b.y += b.vy; b.rot += b.vr; b.vy += 0.03 * dpr;
+        if (b.y > H && Date.now() < until) { b.y = -20; b.vy = (2 + Math.random() * 3) * dpr; }
+        if (b.y <= H) alive = true;
+        ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot); ctx.fillStyle = b.c; ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); ctx.restore();
+      }
+      confettiRaf = alive ? requestAnimationFrame(frame) : (stopConfetti(), null);
+    };
+    confettiRaf = requestAnimationFrame(frame);
+  }
+  function stopConfetti() {
+    if (confettiRaf) cancelAnimationFrame(confettiRaf);
+    confettiRaf = null;
+    $('#confetti').hidden = true;
   }
 
   // ------------------------------------------------------------ timer
@@ -642,7 +778,7 @@
     else if ('pitchDone' in d) act({ type: 'pitchDone' });
     else if (d.call) act({ type: 'call', value: d.call });
     else if (d.suspect) act({ type: 'suspect', target: d.suspect });
-    else if ('again' in d) send('again');
+    else if ('again' in d) send('again', { restart: d.again === 'restart' });
     else if ('leave' in d) leave();
   });
 

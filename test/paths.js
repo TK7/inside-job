@@ -169,5 +169,33 @@ function playBluff(t, finders) {
   console.log('  ok  2 vs 3 teams scale the smaller team by 1.5');
 }
 
+// 8. Vault wins on 2 alarms; Play again deals the same crew into a new heist, Back to lobby doesn't.
+{
+  const t = setup(3);
+  const { room, ids } = t;
+  const wrong = () => (t.g.cur.answer + 1) % 4;
+  ids.forEach((id) => room.act(id, { type: 'answer', choice: wrong() }));
+  room.act(t.g.cur.safecracker, { type: 'pick', choice: wrong() });
+  room.timeout(); // trivia reveal -> bluff
+  assert(!playBluff(t, []), 'nobody finds the truth');
+  assert.strictEqual(t.g.alarms, 2);
+  assert.strictEqual(room.phase, 'gameover');
+  assert.strictEqual(room.g.winner, 'vault');
+  const firstNo = room.view(ids[0]).game.no;
+  assert.deepStrictEqual(room.playAgain(ids[1], true), {}, 'non-host is ignored');
+  assert.strictEqual(room.phase, 'gameover');
+  assert.deepStrictEqual(room.playAgain(ids[0], true), {});
+  assert.strictEqual(room.phase, 'briefing', 'restart goes straight to a new briefing');
+  assert.strictEqual(room.view(ids[2]).game.no, firstNo + 1);
+  assert.strictEqual(room.players.length, 3);
+  assert(room.players.every((p) => p.score === 0), 'scores reset');
+
+  ids.forEach((id) => room.act(id, { type: 'ready' }));
+  while (room.phase !== 'gameover') room.timeout();
+  room.playAgain(ids[0], false);
+  assert.strictEqual(room.phase, 'lobby');
+  console.log('  ok  Vault wins on 2 alarms; Play again restarts in the same room; Back to lobby works');
+}
+
 console.log('All rule-path tests passed.');
 process.exit(0); // pending phase timers would otherwise keep the process alive

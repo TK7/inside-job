@@ -265,21 +265,27 @@ class Room {
         bluffed: new Set(),
       };
     }
-    Object.assign(this.g, { step: -1, round: 0, cur: null, ready: new Set(), winner: null, winners: [] });
+    this.gamesPlayed = (this.gamesPlayed || 0) + 1;
+    Object.assign(this.g, { no: this.gamesPlayed, step: -1, round: 0, cur: null, ready: new Set(), winner: null, winners: [] });
     this.chat = [];
     this.system('The heist begins. Check your briefing!');
     this.setPhase('briefing', SECONDS.briefing);
     return {};
   }
 
-  playAgain(id) {
+  // `restart` deals the same crew straight into a new heist with the same settings;
+  // otherwise everyone returns to the lobby (to change mode, pack or teams).
+  playAgain(id, restart) {
     if (id !== this.hostId || this.phase !== 'gameover') return {};
     clearTimeout(this.timer);
     this.g = null;
     this.phase = 'lobby';
     this.endsAt = null;
     this.players.filter((p) => !p.connected).forEach((p) => this.remove(p.id));
-    this.system('Back in the lobby. The host can start another job.');
+    if (restart && !this.startError()) return this.start(id);
+    this.system(restart
+      ? `Back in the lobby: ${this.startError()}`
+      : 'Back in the lobby. The host can start another job.');
     this.changed();
     return {};
   }
@@ -877,7 +883,7 @@ class Room {
     if (!g) return v;
 
     const over = this.phase === 'gameover';
-    const game = { mode: g.mode, round: g.round, step: g.step, schedule: g.schedule };
+    const game = { no: g.no, mode: g.mode, round: g.round, step: g.step, schedule: g.schedule };
     if (g.mode === 'crew') {
       v.me.role = pid === g.moleId ? 'mole' : 'crew';
       Object.assign(game, {
