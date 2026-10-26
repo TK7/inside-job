@@ -1,0 +1,21 @@
+{
+  "name": "inside-job",
+  "version": "1.0.0",
+  "description": "Inside Job - a real-time bank-vault heist party game for 2-8 players (trivia, bluffing, social deduction).",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "live": "node scripts/go-live.js",
+    "test": "node test/paths.js && node test/simulate.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}

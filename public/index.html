@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Inside Job</title>
+  <meta name="description" content="A real-time bank-vault heist party game for 2–8 players: trivia, bluffing and a hidden Mole.">
+  <meta name="theme-color" content="#0d1015">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Home: create or join -->
+  <main id="home" class="home" hidden>
+    <div class="home-card">
+      <div class="logo">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="32" r="9" fill="none" stroke="currentColor" stroke-width="4"/><g stroke="currentColor" stroke-width="4" stroke-linecap="round"><path d="M32 4v10M32 50v10M4 32h10M50 32h10M12 12l7 7M45 45l7 7M52 12l-7 7M19 45l-7 7"/></g></svg>
+        <h1>Inside Job</h1>
+      </div>
+      <p class="tagline">Crack the vault. Bluff your crew. Find the Mole.</p>
+
+      <label class="field">
+        <span>Your nickname</span>
+        <input id="name" maxlength="16" autocomplete="nickname" placeholder="e.g. Slick Rick">
+      </label>
+
+      <div class="join-row">
+        <label class="field grow">
+          <span>Room code</span>
+          <input id="code" maxlength="4" autocapitalize="characters" autocomplete="off" placeholder="ABCD">
+        </label>
+        <button id="join-btn" class="btn primary">Join</button>
+      </div>
+      <div class="or"><span>or</span></div>
+      <button id="create-btn" class="btn gold wide">Create a new room</button>
+      <p id="home-error" class="error" role="alert"></p>
+
+      <a class="rules-link" href="/rules" target="_blank" rel="noopener">How to play →</a>
+      <p class="fine">2–8 players · each on their own device · about 10–15 minutes</p>
+    </div>
+  </main>
+
+  <!-- Room: lobby + game -->
+  <div id="room" class="room" hidden>
+    <header class="topbar">
+      <button id="code-chip" class="code-chip" title="Copy invite link">
+        <span class="label">Room</span><span id="room-code">----</span><span class="copy">Copy link</span>
+      </button>
+      <div id="status" class="status"></div>
+      <div class="top-actions">
+        <a class="icon-btn" href="/rules" target="_blank" rel="noopener" title="How to play">?</a>
+        <button id="leave-btn" class="icon-btn" title="Leave room">⎋</button>
+      </div>
+    </header>
+    <div id="timer" class="timer"><div id="timer-bar"></div><span id="timer-text"></span></div>
+
+    <div class="layout">
+      <section id="stage" class="stage" aria-live="polite"></section>
+
+      <aside class="side">
+        <div class="panel players-panel">
+          <h3>Crew</h3>
+          <ul id="players" class="players"></ul>
+        </div>
+        <div class="panel chat-panel" id="chat-panel">
+          <button id="chat-toggle" class="chat-head">
+            <h3>Chat</h3><span id="unread" class="badge" hidden></span><span class="chev">▾</span>
+          </button>
+          <div class="chat-body">
+            <div id="channels" class="channels" hidden>
+              <button data-ch="all" class="ch active">All</button>
+              <button data-ch="team" class="ch">My team</button>
+            </div>
+            <ol id="messages" class="messages"></ol>
+            <form id="chat-form" class="chat-form" autocomplete="off">
+              <input id="chat-input" maxlength="200" placeholder="Say something…">
+              <button class="btn small">Send</button>
+            </form>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="/vendor/socket.io.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

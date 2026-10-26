@@ -1,0 +1,9 @@
+# One-click permanent hosting on Render (free plan). See README "Permanent hosting".
+services:
+  - type: web
+    name: inside-job
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
