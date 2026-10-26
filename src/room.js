@@ -21,6 +21,14 @@ const MAX_PLAYERS = 8;
 const LOCKS_TO_WIN = 3;
 const TOTAL_LOCKS = 5;
 const TEAM_NAMES = { A: 'Crimson Crew', B: 'Cobalt Crew' };
+// Personal money ($). Every miss (a wrong answer, or none before the timer) costs half the reward.
+const MONEY = {
+  trivia: 100, triviaMiss: 50, fastest: 50,
+  truth: 100, truthMiss: 50, fooled: 50,
+  pokerCall: 50, pokerMiss: 25, bluffer: 200,
+  moleVote: 200, moleMiss: 100, alarmToMole: 150,
+  heistBonus: 250,
+};
 const LOBBY_DROP_MS = 20000;
 // Test hook: IJ_TIME_SCALE=0.05 runs every timer 20x faster.
 const TIME_SCALE = Number(process.env.IJ_TIME_SCALE) || 1;
@@ -102,7 +110,7 @@ class Room {
     for (let n = 2; this.players.some((p) => p.name.toLowerCase() === unique.toLowerCase()); n++) {
       unique = `${name.slice(0, 13)} ${n}`;
     }
-    const p = { id: newId(), token, name: unique, connected: true, team: this.smallerTeam(), score: 0 };
+    const p = { id: newId(), token, name: unique, connected: true, team: this.smallerTeam(), score: 0, bank: 0 };
     this.players.push(p);
     this.ensureHost();
     this.system(`${p.name} joined the crew.`);
@@ -405,12 +413,31 @@ class Room {
     }
   }
 
-  // Personal points; in Rival Crews they also count (scaled) for the player's team.
+  // Personal money: `score` is this game's net, `bank` the running total for the room.
+  pay(pid, amount) {
+    const p = this.player(pid);
+    if (!p) return;
+    p.score += amount;
+    p.bank += amount;
+  }
+
+  // A miss costs personal money only; team points in Rival Crews are never reduced.
+  charge(pid, amount) {
+    this.pay(pid, -amount);
+  }
+
+  // Money earned by playing well; in Rival Crews it also counts (scaled) for the player's team.
   award(pid, pts) {
     const p = this.player(pid);
     if (!p) return;
-    p.score += pts;
+    this.pay(pid, pts);
     if (this.g.mode === 'rivals') this.g.teamScore[p.team] += pts * this.g.scale[p.team];
+  }
+
+  // Players who could answer this round: connected, and not a benched Mole.
+  answerers() {
+    const g = this.g;
+    return this.connected().filter((p) => !(g.mode === 'crew' && g.exposed && p.id === g.moleId));
   }
 
   // ---------------------------------------------------------------- player actions
@@ -556,7 +583,7 @@ class Room {
     } else {
       cur.pick = pick;
     }
-    for (const [pid, c] of Object.entries(cur.answers)) if (c === cur.answer) this.award(pid, 100);
+    this.payTrivia();
     this.lockResult(cur.pick === cur.answer);
     this.setPhase('trivia-reveal', SECONDS.reveal);
   }
@@ -568,14 +595,22 @@ class Room {
     const before = { ...g.teamScore };
     let fastest = null;
     for (const [pid, c] of Object.entries(cur.answers)) {
-      if (c !== cur.answer) continue;
-      this.award(pid, 100);
-      if (!fastest || cur.times[pid] < cur.times[fastest]) fastest = pid;
+      if (c === cur.answer && (!fastest || cur.times[pid] < cur.times[fastest])) fastest = pid;
     }
-    if (fastest) this.award(fastest, 50);
+    this.payTrivia();
+    if (fastest) this.award(fastest, MONEY.fastest);
     cur.fastest = fastest;
     cur.gain = { A: g.teamScore.A - before.A, B: g.teamScore.B - before.B };
     this.setPhase('trivia-reveal', SECONDS.reveal);
+  }
+
+  // Each player's own private answer: right earns, wrong or missing costs.
+  payTrivia() {
+    const cur = this.g.cur;
+    for (const p of this.answerers()) {
+      if (cur.answers[p.id] === cur.answer) this.award(p.id, MONEY.trivia);
+      else this.charge(p.id, MONEY.triviaMiss);
+    }
   }
 
   lockResult(ok) {
@@ -587,7 +622,7 @@ class Room {
       this.system(`Lock ${g.results.length} cracked! (${g.locks}/${LOCKS_TO_WIN})`);
     } else {
       g.alarms++;
-      if (g.moleId) this.award(g.moleId, 150);
+      if (g.moleId) this.award(g.moleId, MONEY.alarmToMole);
       this.system(`Alarm! The Vault has ${g.alarms}/${g.maxAlarms} alarms.`);
     }
   }
@@ -675,10 +710,15 @@ class Room {
       if (!opt) continue;
       if (opt.kind === 'truth') {
         found++;
-        this.award(pid, 100);
+        this.award(pid, MONEY.truth);
       } else if (opt.kind === 'fake') {
-        opt.authors.forEach((a) => this.award(a, 50));
+        opt.authors.forEach((a) => this.award(a, MONEY.fooled));
       }
+    }
+    // Falling for a fake or a Vault decoy, or not voting, costs.
+    for (const p of this.answerers()) {
+      const opt = (this.ballotFor(p.id) || []).find((o) => o.id === cur.votes[p.id]);
+      if (!opt || opt.kind !== 'truth') this.charge(p.id, MONEY.truthMiss);
     }
     cur.found = found;
     if (g.mode === 'crew') {
@@ -728,14 +768,18 @@ class Room {
     if (cur.correct) {
       g.teamScore[callers] += 200;
       for (const [pid, v] of Object.entries(cur.votes)) {
-        if ((v === 'believe') === cur.truth) this.player(pid) && (this.player(pid).score += 50);
+        if ((v === 'believe') === cur.truth) this.pay(pid, MONEY.pokerCall);
       }
       cur.gain = { [callers]: 200, [cur.bluffTeam]: 0 };
     } else {
       g.teamScore[cur.bluffTeam] += 200;
-      const b = this.player(cur.bluffer);
-      if (b) b.score += 200;
+      this.pay(cur.bluffer, MONEY.bluffer);
       cur.gain = { [callers]: 0, [cur.bluffTeam]: 200 };
+    }
+    // Each caller's own call: wrong or missing costs, whatever the team decided.
+    for (const p of this.connected().filter((q) => q.team !== cur.bluffTeam)) {
+      const v = cur.votes[p.id];
+      if (!v || (v === 'believe') !== cur.truth) this.charge(p.id, MONEY.pokerMiss);
     }
     this.setPhase('poker-reveal', SECONDS.reveal);
   }
@@ -762,14 +806,14 @@ class Room {
     } else if (cur.target === g.moleId) {
       cur.outcome = 'caught';
       g.exposed = true;
-      for (const [pid, v] of Object.entries(cur.votes)) if (v === g.moleId) this.award(pid, 200);
       this.system(`${this.player(cur.target).name} WAS the Mole! They're benched for the rest of the job.`);
     } else {
       cur.outcome = 'innocent';
       g.alarms++;
-      this.award(g.moleId, 150);
+      this.award(g.moleId, MONEY.alarmToMole);
       this.system(`${(this.player(cur.target) || {}).name || 'They'} was innocent. The Vault raises an alarm.`);
     }
+    this.payMoleVotes(true);
     this.setPhase('interrogate-reveal', SECONDS.reveal);
   }
 
@@ -787,8 +831,20 @@ class Room {
     cur.tally = tally(votes);
     cur.target = strictTop(votes);
     const caught = cur.target === g.moleId;
-    for (const [pid, v] of Object.entries(cur.votes)) if (v === g.moleId && pid !== g.moleId) this.award(pid, 200);
+    this.payMoleVotes(false);
     this.finish(caught ? 'crew' : 'mole');
+  }
+
+  // Each crew member's own Mole vote: right earns, an innocent player or no vote costs.
+  // A "pass" in the Interrogation is free. The Mole's own votes are never charged.
+  payMoleVotes(passAllowed) {
+    const g = this.g;
+    for (const p of this.answerers()) {
+      if (p.id === g.moleId) continue;
+      const v = this.g.cur.votes[p.id];
+      if (v === g.moleId) this.award(p.id, MONEY.moleVote);
+      else if (!(passAllowed && v === 'pass')) this.charge(p.id, MONEY.moleMiss);
+    }
   }
 
   startAgentGuess() {
@@ -837,6 +893,7 @@ class Room {
         .filter((p) => (this.loyalty(p) === winner))
         .map((p) => p.id);
     }
+    if (g.mode === 'crew') g.winners.forEach((pid) => this.pay(pid, MONEY.heistBonus));
     const label = {
       crew: 'The crew cracked the vault and got away clean!',
       mole: 'The Mole wins! The loot is gone.',
@@ -875,7 +932,7 @@ class Room {
       settings: this.settings,
       teamNames: TEAM_NAMES,
       me: { id: me.id, name: me.name, team: me.team },
-      players: this.players.map((p) => ({ id: p.id, name: p.name, connected: p.connected, team: p.team })),
+      players: this.players.map((p) => ({ id: p.id, name: p.name, connected: p.connected, team: p.team, bank: p.bank })),
       chat: this.chat.filter((m) => m.to === 'all' || (g && g.mode === 'rivals' && m.to === me.team)),
       startError: this.phase === 'lobby' ? this.startError() : null,
       game: null,

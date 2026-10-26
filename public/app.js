@@ -81,9 +81,16 @@
       store.del('ij-room');
       return showHome('You were removed from the room.');
     }
+    // Tell players when their own money moves (same room, same seat).
+    const was = S && S.code === state.code && S.me.id === state.me.id ? S.players.find((p) => p.id === S.me.id) : null;
+    const now = state.players.find((p) => p.id === state.me.id);
     S = state;
     deadline = state.endsIn == null ? null : Date.now() + state.endsIn;
     render();
+    if (was && now && now.bank !== was.bank) {
+      const d = now.bank - was.bank;
+      toast(`${d > 0 ? '+' : '−'}$${Math.abs(d).toLocaleString('en-US')} · your total: ${now.bank < 0 ? '−' : ''}$${Math.abs(now.bank).toLocaleString('en-US')}`, d < 0);
+    }
   });
 
   function send(event, data) {
@@ -111,6 +118,12 @@
   const other = (t) => (t === 'A' ? 'B' : 'A');
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const teamChip = (t) => `<span class="tag ${t}">${teamName(t)}</span>`;
+  // $1,250 / -$150 (red); `signed` adds + for gains, as in "+$300".
+  function money(n, signed) {
+    n = Math.round(n || 0);
+    const text = `${n < 0 ? '−' : signed && n > 0 ? '+' : ''}$${Math.abs(n).toLocaleString('en-US')}`;
+    return `<span class="money${n < 0 ? ' neg' : ''}">${text}</span>`;
+  }
   function colorFor(id) {
     let h = 0;
     for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 360;
@@ -177,7 +190,7 @@
         return `<li class="${p.id === S.me.id ? 'me' : ''}">
           <span class="dot ${p.connected ? '' : 'off'}"></span>
           <span class="pname ${p.connected ? '' : 'off-name'}">${esc(p.name)}${p.id === S.me.id ? ' <span class="muted">(you)</span>' : ''}</span>
-          ${tags.join('')}${kick}</li>`;
+          ${tags.join('')}<span class="bank" title="Running total in this room">${money(p.bank)}</span>${kick}</li>`;
       })
       .join('');
   }
@@ -317,7 +330,7 @@
           <li>You win if the Vault raises <strong>${g.maxAlarms} alarms</strong>, <em>or</em> if the crew opens the vault but fails to name you in the Final Accusation.</li>
           <li>Some rounds you'll get an <strong>insider tip</strong> showing the real answer. Use it to steer the crew wrong without looking guilty.</li>
           <li>Everyone's answers and votes are revealed after each lock, so don't be obvious.</li>
-          <li>Each alarm earns you +150.</li></ul></div>`;
+          <li>Each alarm earns you +$150.</li>${moneyRule()}</ul></div>`;
       } else {
         card = `<div class="card role crew"><p class="eyebrow">Your role</p><div class="title">You're Crew</div>
           <p>Work together to rob the Vault.</p><ul>
@@ -325,7 +338,7 @@
           <li><strong>Trivia locks:</strong> answer privately, discuss, then the Safecracker locks in the crew's answer.</li>
           <li><strong>Bluff locks:</strong> write a fake answer, then find the real one. More than half the crew must find the truth.</li>
           ${g.hasMole ? '<li><strong>One of you is the Mole.</strong> Watch who steers you wrong. You get one Interrogation mid-game and a Final Accusation at the end.</li>' : '<li>No Mole this time. It\'s pure co-op against the Vault.</li>'}
-          </ul></div>`;
+          ${moneyRule()}</ul></div>`;
       }
     } else if (role === 'agent') {
       card = `<div class="card role agent"><p class="eyebrow">Your secret role</p><div class="title">Double Agent</div>
@@ -339,7 +352,10 @@
         <li><strong>Smoke & Mirrors:</strong> fool the other team with fakes, and find the truth on your own ballot.</li>
         <li><strong>Poker Face:</strong> one player defends a statement as TRUE. The other team calls Believe or Busted.</li>
         ${g.hasAgents ? '<li><strong>Each team has a secret Double Agent</strong> working for the other side. You\'ll vote on yours at the end (+300).</li>' : ''}
-        </ul></div>`;
+        ${moneyRule()}</ul></div>`;
+    }
+    function moneyRule() {
+      return `<li><strong>Your money:</strong> right answers pay, and a wrong answer or no answer costs half as much.${g.mode === 'crew' ? ' Winners get a $250 heist bonus.' : ''} Your total carries over between games in this room (you have ${money(P(S.me.id).bank)}).</li>`;
     }
     return `${card}<div class="card row"><button class="btn gold big" data-ready ${ready ? 'disabled' : ''}>${ready ? 'Ready ✓' : "I'm ready"}</button>
       <span class="muted small">The game starts when everyone is ready, or when the timer runs out.</span></div>`;
@@ -358,8 +374,8 @@
 
     if (ph === 'trivia-answer') {
       instr = crew
-        ? `Pick your answer privately. Next, the crew sees the tally and <strong>${nm(c.safecracker)}</strong> (Safecracker) locks in the crew's answer.`
-        : 'Answer fast. Your first tap is final. +100 for your team if correct, +50 bonus for the fastest correct player.';
+        ? `Pick your answer privately: +$100 if you're right, −$50 if you're wrong or don't answer. Next, the crew sees the tally and <strong>${nm(c.safecracker)}</strong> (Safecracker) locks in the crew's answer.`
+        : 'Answer fast. Your first tap is final. +100 for you and your team if correct (−$50 for you if wrong or no answer), +50 bonus for the fastest correct player.';
       if (benched()) instr = "You've been caught and benched. Watch the crew work.";
     } else if (ph === 'trivia-discuss') {
       instr = amSafe
@@ -584,22 +600,23 @@
       }
     }
 
+    // Ranked by the room's running total; "This game" shows how each player did in this heist.
     const rows = S.players
       .slice()
-      .sort((a, b) => g.scores[b.id] - g.scores[a.id])
+      .sort((a, b) => b.bank - a.bank || g.scores[b.id] - g.scores[a.id])
       .map((p) => {
-        const loser = g.mode === 'crew' && !g.winners.includes(p.id);
         let role = '';
         if (g.mode === 'crew') role = p.id === g.moleId ? '<span class="tag red">Mole</span>' : '<span class="tag">Crew</span>';
         else role = `<span class="tag ${p.team}">${p.team === 'A' ? 'Crimson' : 'Cobalt'}</span>${g.agents && (g.agents.A === p.id || g.agents.B === p.id) ? ' <span class="tag red">Double Agent</span>' : ''}`;
-        return `<tr class="${loser ? 'loser' : ''}"><td>${esc(p.name)}${p.id === S.me.id ? ' <span class="muted">(you)</span>' : ''}</td><td>${role}</td><td class="num">${g.scores[p.id]}</td></tr>`;
+        return `<tr><td>${esc(p.name)}${p.id === S.me.id ? ' <span class="muted">(you)</span>' : ''}</td><td>${role}</td>
+          <td class="num">${money(g.scores[p.id], true)}</td><td class="num total">${money(p.bank)}</td></tr>`;
       })
       .join('');
 
     return `<div class="banner ${good ? 'good' : 'bad'}"><div><div class="big">${esc(titles[0])}</div><div>${esc(titles[1])}</div>
       <div class="small" style="margin-top:6px">${g.winner === 'tie' ? 'Nobody loses tonight.' : iWon ? 'You won!' : 'You lost this one.'}</div></div></div>
-      <div class="card">${reveal}<p class="eyebrow">${g.mode === 'crew' ? 'Personal cut (only the winners get paid)' : 'Player points (MVP)'}</p>
-      <table class="scores">${rows}</table></div>
+      <div class="card">${reveal}<p class="eyebrow">The take${g.mode === 'crew' ? ' · each winner got a $250 heist bonus' : ''}</p>
+      <table class="scores"><tr><th>Player</th><th></th><th class="num">This game</th><th class="num">Room total</th></tr>${rows}</table></div>
       <div class="card row">${againButtons()}<button class="btn" data-leave>Leave room</button></div>`;
   }
 
@@ -650,6 +667,7 @@
         <h2 id="finale-title">${esc(title)}</h2>
         <p>${esc(line)}</p>
         <p class="finale-you">${you}</p>
+        <p class="finale-money">This game ${money(g.scores[S.me.id], true)} · Room total ${money(P(S.me.id).bank)}</p>
         <div class="finale-actions">${againButtons()}</div>
         <button class="btn finale-close" data-close>See the scores</button>
       </div>`;

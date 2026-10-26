@@ -244,8 +244,12 @@ a { color: var(--gold-2); }
 table.scores { width: 100%; border-collapse: collapse; margin-top: 8px; }
 table.scores td { padding: 8px 6px; border-bottom: 1px solid var(--line); }
 table.scores td.num { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
-table.scores tr.loser td { color: var(--muted); }
-table.scores tr.loser td.num { text-decoration: line-through; }
+table.scores th { text-align: left; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 4px 6px; }
+table.scores th.num { text-align: right; }
+table.scores td.total { color: var(--gold-2); }
+.money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.money.neg, table.scores td.total .money.neg { color: var(--red); }
+.players .bank { font-size: 12px; font-weight: 600; color: var(--gold-2); margin-left: auto; }
 
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 20; max-width: calc(100% - 32px);
@@ -271,6 +275,7 @@ table.scores tr.loser td.num { text-decoration: line-through; }
 .finale-card.lost h2 { color: #ffb3b6; }
 .finale-card p { margin: 0 0 8px; color: var(--muted); }
 .finale-card .finale-you { color: var(--text); font-weight: 700; }
+.finale-card .finale-money { color: var(--gold-2); font-weight: 700; }
 .finale-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 14px 0 10px; }
 .finale-close { background: transparent; border-color: transparent; color: var(--muted); padding: 6px 12px; }
 .confetti { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 31; pointer-events: none; }

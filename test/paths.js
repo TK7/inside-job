@@ -60,7 +60,10 @@ function playBluff(t, finders) {
   assert.strictEqual(room.phase, 'gameover');
   assert.strictEqual(t.g.winner, 'crew');
   assert(!t.g.winners.includes(t.g.moleId));
-  console.log('  ok  crew wins by naming the Mole');
+  // Crew: 2 trivia (+100 each) + truth (+100) + Mole vote (+200) + heist bonus (+250).
+  // Mole: same answers (+300), its own vote is never charged, and no bonus for losing.
+  room.players.forEach((p) => assert.strictEqual(p.bank, p.id === t.g.moleId ? 300 : 750, `money for ${p.name}`));
+  console.log('  ok  crew wins by naming the Mole (+ exact money for crew and Mole)');
 }
 
 // 2. Mole escapes when the accusation ties.
@@ -195,6 +198,62 @@ function playBluff(t, finders) {
   room.playAgain(ids[0], false);
   assert.strictEqual(room.phase, 'lobby');
   console.log('  ok  Vault wins on 2 alarms; Play again restarts in the same room; Back to lobby works');
+}
+
+// 9. Money is a running total for the room: right answers pay, misses (wrong or blank) cost half,
+//    crew winners get a heist bonus, totals can go negative, and a new game keeps the bank.
+{
+  const t = setup(3);
+  const { room, ids } = t;
+  winTrivia(t);
+  assert(playBluff(t, ids));
+  winTrivia(t);
+  assert.strictEqual(room.g.winner, 'crew');
+  room.players.forEach((p) => {
+    assert.strictEqual(p.score, 550, 'three right answers + $250 bonus');
+    assert.strictEqual(p.bank, 550);
+  });
+
+  room.playAgain(ids[0], true);
+  ids.forEach((id) => room.act(id, { type: 'ready' }));
+  const g = room.g;
+  assert(room.players.every((p) => p.score === 0 && p.bank === 550), 'new game: score resets, bank carries');
+  room.act(ids[0], { type: 'answer', choice: g.cur.answer });
+  room.act(ids[1], { type: 'answer', choice: (g.cur.answer + 1) % 4 });
+  room.timeout(); // ids[2] never answers
+  room.act(g.cur.safecracker, { type: 'pick', choice: g.cur.answer });
+  const bank = (i) => room.player(ids[i]).bank;
+  assert.deepStrictEqual([bank(0), bank(1), bank(2)], [650, 500, 500], 'right +100, wrong -50, blank -50');
+
+  // A player deep in debt shows a negative total.
+  room.player(ids[2]).bank = -20;
+  room.charge(ids[2], 50);
+  assert.strictEqual(room.view(ids[0]).players.find((p) => p.id === ids[2]).bank, -70);
+  console.log('  ok  money: running room total, misses cost half, heist bonus, negatives allowed');
+}
+
+// 10. Mole votes: an innocent pick or no vote costs $100; a pass in the Interrogation is free.
+{
+  const t = setup(5);
+  const { room, ids } = t;
+  winTrivia(t);
+  playBluff(t, ids);
+  // Fail the next trivia lock so the Interrogation still happens.
+  ids.forEach((id) => room.act(id, { type: 'answer', choice: (t.g.cur.answer + 1) % 4 }));
+  room.act(t.g.cur.safecracker, { type: 'pick', choice: (t.g.cur.answer + 1) % 4 });
+  room.timeout();
+  assert.strictEqual(room.phase, 'interrogate');
+  const crew = nonMole(t);
+  const before = Object.fromEntries(ids.map((id) => [id, room.player(id).bank]));
+  room.act(crew[0], { type: 'suspect', target: 'pass' });
+  room.act(crew[1], { type: 'suspect', target: crew[2] });
+  // crew[2] and crew[3] don't vote; the Mole votes for crew[1].
+  room.act(t.g.moleId, { type: 'suspect', target: crew[1] });
+  room.timeout();
+  const diff = (id) => room.player(id).bank - before[id];
+  assert.deepStrictEqual([diff(crew[0]), diff(crew[1]), diff(crew[2]), diff(crew[3])], [0, -100, -100, -100]);
+  assert.strictEqual(diff(t.g.moleId), 0, 'the Mole is never charged for votes');
+  console.log('  ok  Mole votes: innocent or blank -$100, pass free, Mole exempt');
 }
 
 console.log('All rule-path tests passed.');
