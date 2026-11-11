@@ -33,24 +33,35 @@ using the OpenSSH client built into Windows. It prints a link like `https://abc1
 Send that link to your friends. Keep the window open while you play. The free link changes
 whenever the tunnel reconnects, and the game is only up while your PC is running it.
 
-### Option B: permanent link (Render)
+### Option B: permanent link (Cloudflare Workers)
 
-Live at **https://inside-job.onrender.com**, deployed from `main` of this repository.
+Live at **https://inside-job.jay.systems**, deployed from `main` of this repository by
+Cloudflare Workers Builds (Worker name `inside-job`).
 
-1. Push this folder to a GitHub repository.
-2. In [Render](https://render.com), choose **New → Blueprint** and pick the repo. `render.yaml`
-   sets everything up.
-3. You get a permanent URL like `https://inside-job.onrender.com`. Every push to `main` redeploys.
+How it runs:
 
-`render.yaml` uses Render's **Starter** instance (about $6/month), which stays awake. To run it
-for free instead, set `plan: free`; a free instance sleeps after 15 idle minutes and takes about a
-minute to wake on the next visit.
+- `public/` is served as static assets.
+- `/ws` is the game WebSocket. It goes to one **Durable Object** (`GameHub` in
+  `worker/index.js`) that holds every room in memory, exactly like the old single Node process.
+- `/health` returns `ok <n> rooms`.
 
-Rooms live in server memory, so a deploy or restart ends any games in progress. Avoid pushing
+All of it is configured in `wrangler.jsonc`. To deploy by hand instead of from GitHub:
+
+```bash
+npx wrangler login
+npx wrangler deploy
+```
+
+To run the Worker locally: `npx wrangler dev`.
+
+Workers Builds settings (Cloudflare dashboard → Workers → inside-job → Settings → Build):
+leave the build command empty and use `npx wrangler deploy` as the deploy command.
+
+Rooms live in memory, so a deploy ends any games in progress, and a room is lost if every
+player is disconnected long enough for Cloudflare to unload the Durable Object. Avoid pushing
 during a game night.
 
-Any Node host that supports WebSockets works (Railway, Fly.io, a VPS). Run `npm start` and set
-`PORT` if needed.
+`npm start` still runs the same game as a plain Node server (any host with WebSockets works).
 
 ## Tests
 
@@ -61,14 +72,17 @@ npm test
 - `test/paths.js` drives the rules engine directly through every ending: crew win by
   accusation, Mole escape on a tie, Interrogation catch and miss, the bluff majority rule,
   the Poker Face tie rule and team-size scaling.
-- `test/simulate.js` starts the real server and plays 13 complete games with bot players over
-  Socket.IO (2–8 players, both modes, all packs, an idle player, a mid-game reconnect). It checks
+- `test/simulate.js` starts the real server and plays complete games with bot players over
+  WebSockets (2–8 players, both modes, all packs, an idle player, a mid-game reconnect). It checks
   that no player ever receives secret info (answers, roles, other teams' chat).
 
 ## Project layout
 
 ```
-server.js            HTTP + Socket.IO server, room codes, per-player state pushes
+server.js            local Node server (static files + WebSocket on /ws)
+worker/index.js      Cloudflare Worker + GameHub Durable Object (production)
+wrangler.jsonc       Cloudflare config: assets, Durable Object, custom domain
+src/hub.js           shared WebSocket protocol, room codes, per-player state pushes
 src/room.js          lobby, chat and the full rules engine for both modes
 src/content.js       question-pack loader (no repeats within a room)
 content/standard.json  default family-friendly pack

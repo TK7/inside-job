@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "inside-job",
+  "main": "worker/index.js",
+  "compatibility_date": "2025-10-01",
+
+  // Serve the web client straight from ./public. /ws and /health fall through to the Worker.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+
+  // One Durable Object holds every game room in memory and owns the WebSockets.
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "GameHub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameHub"] }],
+
+  "routes": [{ "pattern": "inside-job.jay.systems", "custom_domain": true }],
+
+  "observability": { "enabled": true }
+}

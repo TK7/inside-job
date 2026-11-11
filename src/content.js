@@ -6,15 +6,18 @@
 //   bluff:  { q: "fact with a ____ blank", a: answer, alts?: [accepted variants], d: [3 Vault decoys] }
 //   poker:  { s: statement, t: true|false }
 
-const fs = require('fs');
-const path = require('path');
+// Static requires (no fs) so the packs bundle into the Cloudflare Worker as well as run in Node.
+const SOURCES = {
+  standard: require('../content/standard.json'),
+  adult: require('../content/adult.json'),
+};
 
 const PACKS = ['standard', 'adult'];
 const KINDS = ['trivia', 'bluff', 'poker'];
 
 const packs = {};
 for (const name of PACKS) {
-  const data = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'content', `${name}.json`), 'utf8'));
+  const data = SOURCES[name];
   packs[name] = {};
   for (const kind of KINDS) {
     packs[name][kind] = (data[kind] || []).map((item, i) => ({ ...item, id: `${name}:${kind}:${i}` }));
