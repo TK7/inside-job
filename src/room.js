@@ -31,7 +31,7 @@ const MONEY = {
 };
 const LOBBY_DROP_MS = 20000;
 // Test hook: IJ_TIME_SCALE=0.05 runs every timer 20x faster.
-const TIME_SCALE = Number(process.env.IJ_TIME_SCALE) || 1;
+const TIME_SCALE = (typeof process !== 'undefined' && process.env && Number(process.env.IJ_TIME_SCALE)) || 1;
 
 const rand = (n) => Math.floor(Math.random() * n);
 const shuffle = (list) => {

@@ -116,7 +116,7 @@ smaller teams aren't disadvantaged. Highest team score wins.
   same group.
 
 ## Tech
-- Node.js + Socket.IO. The server owns all game state, timers and secret info, and each player
+- Cloudflare Workers + a Durable Object over plain WebSockets (Node + `ws` locally). The server owns all game state, timers and secret info, and each player
   is only sent what they're allowed to see.
 - Vanilla HTML/CSS/JS client with no build step, mobile-first.
 - Content packs live in `content/*.json`. Questions aren't repeated within a room until the

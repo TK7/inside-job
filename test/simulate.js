@@ -1,5 +1,5 @@
 'use strict';
-// End-to-end simulation: starts the real server, connects bot players over Socket.IO,
+// End-to-end simulation: starts the real server, connects bot players over WebSockets,
 // plays complete games in both modes and checks that secret info never leaks.
 //
 //   npm test
@@ -7,16 +7,49 @@
 process.env.PORT = process.env.PORT || '3999';
 process.env.IJ_TIME_SCALE = process.env.IJ_TIME_SCALE || '0.03';
 
-const { io } = require('socket.io-client');
-const { server } = require('../server');
+const WebSocket = require('ws');
+// IJ_URL=ws://host/ws runs the bots against another server (e.g. `wrangler dev`) instead.
+const { server } = process.env.IJ_URL ? { server: { close() {} } } : require('../server');
 
-const URL = `http://localhost:${process.env.PORT}`;
+const URL = process.env.IJ_URL || `ws://localhost:${process.env.PORT}/ws`;
+
+// Tiny client for the hub's wire protocol, shaped like the old Socket.IO client.
+function io(url) {
+  const handlers = {};
+  const acks = new Map();
+  let seq = 0;
+  const sock = { connected: false, ws: null };
+  sock.connect = () => {
+    const ws = new WebSocket(url);
+    sock.ws = ws;
+    ws.on('open', () => (sock.connected = true));
+    ws.on('close', () => (sock.connected = false));
+    ws.on('error', () => {});
+    ws.on('message', (data) => {
+      const msg = JSON.parse(String(data));
+      if (msg.ack != null) {
+        const cb = acks.get(msg.ack);
+        acks.delete(msg.ack);
+        if (cb) cb(msg.d);
+      } else if (handlers[msg.e]) handlers[msg.e](msg.d);
+    });
+  };
+  sock.disconnect = sock.close = () => sock.ws && sock.ws.terminate();
+  sock.on = (e, fn) => (handlers[e] = fn);
+  sock.emit = (e, d, cb) => {
+    const msg = { e, d: d || {} };
+    if (cb) { msg.id = ++seq; acks.set(msg.id, cb); }
+    sock.ws.send(JSON.stringify(msg));
+  };
+  sock.connect();
+  return sock;
+}
 const failures = [];
 const check = (ok, msg) => { if (!ok) failures.push(msg); };
 const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
 
 function bot(name, { idle = false } = {}) {
-  const sock = io(URL, { transports: ['websocket'], forceNew: true });
+  const sock = io(URL);
   const b = { name, sock, state: null, acted: new Set(), phases: [], over: null, token: `tok-${name}-${Math.random()}` };
   const emit = (ev, data) => new Promise((res) => sock.emit(ev, data, res));
   b.emit = emit;

@@ -17,7 +17,85 @@
     store.set('ij-token', token);
   }
 
-  const socket = io();
+  // Minimal Socket.IO-style client over a native WebSocket (/ws): emit(event, data, ack),
+  // on(event, fn), plus 'connect' / 'disconnect'. Reconnects with backoff and pings so dead
+  // links are noticed (phones sleeping, Wi-Fi switching).
+  function connectSocket() {
+    const handlers = {};
+    const acks = new Map();
+    let ws = null;
+    let seq = 0;
+    let open = false;
+    let wasOpen = false;
+    let retry = 0;
+    let lastHeard = 0;
+    let reconnectTimer = null;
+    const queue = [];
+
+    function raw(msg) {
+      if (open) ws.send(JSON.stringify(msg));
+      else queue.push(msg);
+    }
+    function dial() {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+      ws.onopen = () => {
+        open = true;
+        wasOpen = true;
+        retry = 0;
+        lastHeard = Date.now();
+        handlers.connect && handlers.connect();
+        while (queue.length && open) ws.send(JSON.stringify(queue.shift()));
+      };
+      ws.onmessage = (ev) => {
+        lastHeard = Date.now();
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+        if (msg.ack != null) {
+          const cb = acks.get(msg.ack);
+          acks.delete(msg.ack);
+          if (cb) cb(msg.d);
+        } else if (msg.e && handlers[msg.e]) {
+          handlers[msg.e](msg.d);
+        }
+      };
+      ws.onclose = () => {
+        const had = open;
+        open = false;
+        acks.clear();
+        if (had && handlers.disconnect) handlers.disconnect();
+        if (!reconnectTimer) reconnectTimer = setTimeout(dial, Math.min(5000, 300 * 2 ** retry++));
+      };
+      ws.onerror = () => { try { ws.close(); } catch { /* ignore */ } };
+    }
+    setInterval(() => {
+      if (!open) return;
+      if (Date.now() - lastHeard > 30000) return ws.close(); // no pong: link is dead
+      ws.send(JSON.stringify({ e: 'ping' }));
+    }, 10000);
+    // Phones freeze background tabs; reconnect as soon as the page is visible again.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || !ws) return;
+      if (ws.readyState === WebSocket.CLOSED) dial();
+      else if (open && Date.now() - lastHeard > 15000) ws.close();
+    });
+    dial();
+    return {
+      on(event, fn) { handlers[event] = fn; },
+      emit(event, data, ack) {
+        const msg = { e: event, d: data };
+        if (typeof ack === 'function') {
+          msg.id = ++seq;
+          acks.set(msg.id, ack);
+        }
+        raw(msg);
+      },
+      get connected() { return open && wasOpen; },
+    };
+  }
+
+  const socket = connectSocket();
   let S = null; // latest state from the server
   let deadline = null;
   let channel = 'all';
